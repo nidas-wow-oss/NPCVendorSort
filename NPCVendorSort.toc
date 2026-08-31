@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: |cffffffffN|r|cffffffffP|r|cffffffffC|r|cff00ff00 |r|cff00ff00V|r|cff00ff00e|r|cff00ff00n|r|cff00ff00d|r|cff00ff00o|r|cff00ff00r|r|cff00ff00 |r|cff00ff00S|r|cff00ff00o|r|cff00ff00r|r|cff00ff00t|r
+## Notes: Filter vendor items by equipment slot, with item level and quality colors.
+## Author: Nidhaus
+## Version: 2.1
+## SavedVariables: NPCVendorSortDB
+
+NPCVendorSort.lua
+NPCVendorSort_UI.lua
+NPCVendorSort_Enhanced.lua
