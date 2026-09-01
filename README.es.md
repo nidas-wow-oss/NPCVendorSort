@@ -14,6 +14,20 @@ Addon para **World of Warcraft 3.3.5a (WotLK)** que agrega filtros a la ventana 
 - Panel de filtros integrado en la ventana del vendedor, sin ocupar espacio extra.
 - Guarda tu configuración entre sesiones (`NPCVendorSortDB`).
 
+## Capturas
+
+Filtrando por un solo slot: solo los cascos del inventario del vendedor, con item level y colores de calidad:
+
+![Filtro por cabeza](images/filter-head.png)
+
+Varios slots a la vez: cintura, piernas y anillos juntos:
+
+![Filtro por varios slots](images/filter-multi-slot.png)
+
+El filtro también funciona en vendedores con varias páginas:
+
+![Filtro por cuello](images/filter-neck.png)
+
 ## Instalación
 
 1. Cerrá el juego.

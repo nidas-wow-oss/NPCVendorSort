@@ -14,6 +14,20 @@ An addon for **World of Warcraft 3.3.5a (WotLK)** that adds filters to the vendo
 - The filter panel sits inside the vendor window, taking no extra screen space.
 - Saves your settings between sessions (`NPCVendorSortDB`).
 
+## Screenshots
+
+Filtering by a single slot — only helmets from the vendor's stock, with item level and quality colours:
+
+![Filtering by head slot](images/filter-head.png)
+
+Several slots at once — waist, legs and rings together:
+
+![Filtering by several slots](images/filter-multi-slot.png)
+
+The filter works across paginated vendors too:
+
+![Filtering by neck slot](images/filter-neck.png)
+
 ## Installation
 
 1. Close the game.
