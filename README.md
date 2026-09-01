@@ -1,37 +1,39 @@
+*[Leer en español](README.es.md)*
+
 # NPC Vendor Sort
 
-Addon para **World of Warcraft 3.3.5a (WotLK)** que agrega filtros a la ventana de vendedor: podés mostrar solo las piezas de un slot de equipo concreto, y ver el item level y la calidad de cada objeto de un vistazo.
+An addon for **World of Warcraft 3.3.5a (WotLK)** that adds filters to the vendor window: show only the pieces for a given equipment slot, and see each item's level and quality at a glance.
 
-**Versión:** 2.1 · **Autor:** Nidhaus
+**Version:** 2.1 · **Author:** Nidhaus
 
-## Qué hace
+## What it does
 
-- Filtra el inventario del vendedor **por slot de equipo** (cabeza, hombros, pecho, armas, etc.).
-- Muestra el **item level** de cada objeto directamente en el listado.
-- Colorea los objetos según su **calidad** (común, poco común, raro, épico...).
-- Panel de filtros integrado en la ventana del vendedor, sin ocupar espacio extra.
-- Guarda tu configuración entre sesiones (`NPCVendorSortDB`).
+- Filters the vendor's stock **by equipment slot** (head, shoulders, chest, weapons, and so on).
+- Shows each item's **item level** directly in the list.
+- Colours items by **quality** (common, uncommon, rare, epic...).
+- The filter panel sits inside the vendor window, taking no extra screen space.
+- Saves your settings between sessions (`NPCVendorSortDB`).
 
-## Instalación
+## Installation
 
-1. Cerrá el juego.
-2. Copiá la carpeta `NPCVendorSort` dentro de `World of Warcraft\Interface\AddOns\`.
-3. Iniciá el juego y activá el addon en el selector de la pantalla de personajes.
+1. Close the game.
+2. Copy the `NPCVendorSort` folder into `World of Warcraft\Interface\AddOns\`.
+3. Start the game and enable the addon on the character selection screen.
 
-La ruta final tiene que quedar `Interface\AddOns\NPCVendorSort\NPCVendorSort.toc`.
+The final path should be `Interface\AddOns\NPCVendorSort\NPCVendorSort.toc`.
 
-## Comandos
+## Commands
 
-| Comando | Qué hace |
+| Command | Action |
 |---|---|
-| `/nvs` | Abre o cierra el panel de filtros |
-| `/vendorsort` | Igual que `/nvs` |
-| `/nvs reset` | Reactiva todos los slots y limpia los filtros |
+| `/nvs` | Open or close the filter panel |
+| `/vendorsort` | Same as `/nvs` |
+| `/nvs reset` | Re-enable every slot and clear the filters |
 
-## Compatibilidad
+## Compatibility
 
-Interface 30300 — WotLK 3.3.5a. Probado en Warmane.
+Interface 30300 — WotLK 3.3.5a. Tested on Warmane.
 
-## Licencia
+## License
 
-Uso libre. Si lo redistribuís o lo usás como base, mantené el crédito al autor.
+Free to use. If you redistribute it or build on it, keep the credit to the author.
