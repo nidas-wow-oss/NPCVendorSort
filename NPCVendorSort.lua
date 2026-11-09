@@ -1,22 +1,15 @@
--- =========================================================
--- NPCVendorSort - Core
--- WoW 3.3.5a (Interface 30300)
--- =========================================================
-
 NPCVendorSort = {}
 local NVS = NPCVendorSort
 
-NVS.visibleItems  = {}   -- lista de indices reales del vendedor, ya filtrada
-NVS.detectedSlots = {}   -- slots presentes en el vendedor actual
-NVS.slotCache     = {}   -- itemID -> equipSlot (cache local)
-NVS.useCache      = {}   -- itemID -> lo puede usar mi clase?
+NVS.visibleItems  = {}
+NVS.detectedSlots = {}
+NVS.slotCache     = {}
+NVS.useCache      = {}
 NVS.pendingCache  = false
 NVS.isRedrawing   = false
 
-local OTHER = "NVS_OTHER"   -- pseudo-slot para todo lo que no es equipo
+local OTHER = "NVS_OTHER"
 
--- Orden FIJO de los slots. pairs() en Lua no garantiza orden: usar una lista
--- ordenada es lo que evita que los checkbox salten de posicion al refrescar.
 NVS.slotOrder = {
     "INVTYPE_HEAD",
     "INVTYPE_NECK",
@@ -81,20 +74,15 @@ NVS.slotNames = {
 
 NVS.OTHER = OTHER
 
--- Acceso rapido: slot valido?
 NVS.validSlot = {}
 for _, k in ipairs(NVS.slotOrder) do NVS.validSlot[k] = true end
-
--- =========================================================
--- SAVED VARIABLES
--- =========================================================
 
 local defaultOptions = {
     showItemLevel     = true,
     showQualityColors = true,
     autoShowPanel     = true,
-    classFilter       = true,    -- solo lo que mi clase puede equipar
-    classArmorOnly    = false,   -- ademas, solo mi tipo de armadura
+    classFilter       = true,
+    classArmorOnly    = false,
 }
 
 function NVS:InitDB()
@@ -108,23 +96,12 @@ function NVS:InitDB()
         end
     end
 
-    -- Cualquier slot desconocido arranca activado
     for _, slot in ipairs(self.slotOrder) do
         if NPCVendorSortDB.filters[slot] == nil then
             NPCVendorSortDB.filters[slot] = true
         end
     end
 
-    -- MIGRACION: destrabar "Other".
-    --
-    -- Las versiones viejas escondian el panel entero cuando el vendedor no
-    -- tenia equipo. Si alguna vez habias destildado "Other", quedaba en
-    -- false para siempre y no habia UI para volver a prenderlo: cualquier
-    -- vendedor de encantamientos, joyeria, reactivos o recetas se veia
-    -- COMPLETAMENTE VACIO, porque nada de eso es equipo.
-    --
-    -- Se fuerza a true una sola vez. La marca queda guardada, asi que el
-    -- dia de mañana lo podes volver a destildar y se respeta.
     if not NPCVendorSortDB.otherUnstuck_v2 then
         NPCVendorSortDB.otherUnstuck_v2 = true
         NPCVendorSortDB.filters[OTHER] = true
@@ -134,7 +111,6 @@ function NVS:InitDB()
     self.options = NPCVendorSortDB.options
 end
 
--- Fallback por si algo se ejecuta antes de ADDON_LOADED
 NVS.filters = {}
 NVS.options = {}
 for k, v in pairs(defaultOptions) do NVS.options[k] = v end
@@ -145,14 +121,9 @@ function NVS:IsSlotEnabled(slot)
 end
 
 function NVS:SetSlotEnabled(slot, enabled)
-    -- OJO: nunca asignar nil aqui. Poner nil borra la clave de la tabla,
-    -- cambia el layout del hash y era una de las causas de los bugs.
+
     self.filters[slot] = enabled and true or false
 end
-
--- =========================================================
--- SCAN DEL VENDEDOR
--- =========================================================
 
 local function GetItemIDFromLink(link)
     if not link then return nil end
@@ -160,10 +131,9 @@ local function GetItemIDFromLink(link)
     return id and tonumber(id) or nil
 end
 
--- Devuelve el slot de un item, o nil si el item todavia no esta cacheado
 function NVS:GetSlotForIndex(index)
     local link = GetMerchantItemLink(index)
-    if not link then return OTHER, true end   -- sin link: tratar como "otros", resuelto
+    if not link then return OTHER, true end
 
     local id = GetItemIDFromLink(link)
     if id and self.slotCache[id] then
@@ -172,7 +142,7 @@ function NVS:GetSlotForIndex(index)
 
     local _, _, _, _, _, _, _, _, equipSlot = GetItemInfo(link)
     if equipSlot == nil then
-        -- Item aun no cacheado por el cliente. NO decidir todavia.
+
         return nil, false
     end
 
@@ -207,35 +177,12 @@ function NVS:HasEquipmentSlots()
     return false
 end
 
--- Hay algo que filtrar? = el vendedor tiene al menos una categoria.
---
--- Antes se usaba HasEquipmentSlots para decidir si mostrar el panel y el
--- boton, y ese era el problema de fondo: en un vendedor de encantamientos
--- TODO cae en "Other", asi que no habia equipo, se escondia la interfaz
--- entera, y con "Other" destildado no quedaba manera de darse cuenta ni de
--- arreglarlo. La pregunta correcta no es "hay equipo" sino "hay algo".
 function NVS:HasAnythingToFilter()
     return next(self.detectedSlots) ~= nil
 end
 
--- =========================================================
--- FILTRO POR CLASE
---
--- Que puede EQUIPAR cada clase, segun las reglas del juego en 3.3.5a.
---
--- Se usa una tabla fija y no el tooltip. El truco habitual es mirar si la
--- linea del tipo de arma sale en rojo, pero ese rojo tambien aparece por
--- nivel insuficiente o reputacion faltante, y ahi te esconde items que si
--- podes usar, solo que todavia no. La tabla no se equivoca en eso.
---
--- Los nombres son los que devuelve GetItemInfo en cliente ingles, que es
--- el que usa Warmane.
--- =========================================================
-
 local ALL_ARMOR = { Cloth = true, Leather = true, Mail = true, Plate = true }
 
--- Anillos, cuellos y abalorios llegan como Armor / Miscellaneous: los usa
--- cualquiera, asi que nunca se filtran.
 local ARMOR_FREE = { Miscellaneous = true }
 
 NVS.classGear = {
@@ -309,8 +256,6 @@ NVS.classGear = {
     },
 }
 
--- Reliquias: cada una es de una sola clase. Van aparte porque un paladin no
--- tiene que ver idolos de druida aunque ambos sean "Armor".
 local RELIC_OWNER = {
     Librams = "PALADIN", Idols = "DRUID", Totems = "SHAMAN", Sigils = "DEATHKNIGHT",
 }
@@ -323,8 +268,6 @@ function NVS:GetPlayerClass()
     return self.playerClass
 end
 
--- El tipo de armadura "propio" de la clase segun el nivel: un paladin de 30
--- todavia usa malla, no placas.
 function NVS:GetBestArmor()
     local gear = self.classGear[self:GetPlayerClass() or ""]
     if not gear or not gear.best then return nil end
@@ -336,28 +279,23 @@ function NVS:GetBestArmor()
     return pick
 end
 
--- true = el item se muestra. Ante la duda, SIEMPRE true: es preferible
--- mostrar algo de mas que esconderle al usuario un item que si sirve.
 function NVS:CanUse(itemType, itemSubType)
     if itemType ~= "Weapon" and itemType ~= "Armor" then return true end
 
     local gear = self.classGear[self:GetPlayerClass() or ""]
-    if not gear then return true end          -- clase desconocida: no filtrar
+    if not gear then return true end
 
     if itemType == "Weapon" then
         return gear.weapon[itemSubType] and true or false
     end
 
-    -- Armor
-    if ARMOR_FREE[itemSubType] then return true end        -- anillos, cuellos, abalorios
+    if ARMOR_FREE[itemSubType] then return true end
 
     local owner = RELIC_OWNER[itemSubType]
     if owner then return owner == self:GetPlayerClass() end
 
     if not gear.armor[itemSubType] then return false end
 
-    -- "Solo mi tipo de armadura": un paladin puede ponerse tela, pero no
-    -- quiere verla. Escudos y demas no entran en esta regla.
     if self.options.classArmorOnly and ALL_ARMOR[itemSubType] then
         local best = self:GetBestArmor()
         if best and itemSubType ~= best then return false end
@@ -366,7 +304,6 @@ function NVS:CanUse(itemType, itemSubType)
     return true
 end
 
--- Cache por itemID, igual que el de slots
 function NVS:IsUsableIndex(index)
     if not self.options.classFilter then return true end
 
@@ -377,16 +314,12 @@ function NVS:IsUsableIndex(index)
     if id and self.useCache[id] ~= nil then return self.useCache[id] end
 
     local _, _, _, _, _, itemType, itemSubType = GetItemInfo(link)
-    if itemType == nil then return true end   -- todavia sin cachear: mostrar
+    if itemType == nil then return true end
 
     local ok = self:CanUse(itemType, itemSubType)
     if id then self.useCache[id] = ok end
     return ok
 end
-
--- =========================================================
--- LISTA FILTRADA
--- =========================================================
 
 function NVS:BuildVisibleList()
     wipe(self.visibleItems)
@@ -395,7 +328,6 @@ function NVS:BuildVisibleList()
     for i = 1, n do
         local slot, resolved = self:GetSlotForIndex(i)
 
-        -- Si el item aun no esta cacheado se muestra (mejor de mas que de menos)
         if not resolved then
             table.insert(self.visibleItems, i)
         elseif self:IsSlotEnabled(slot) and self:IsUsableIndex(i) then
@@ -406,11 +338,6 @@ function NVS:BuildVisibleList()
     self:GuardEmptyList()
 end
 
--- Si el filtro dejo la lista en cero pero el vendedor SI tiene items, algo
--- esta mal configurado. Antes eso se veia como un vendedor vacio, sin
--- ninguna pista de por que. Ahora se muestra todo igual y se avisa: es
--- preferible mostrar de mas que hacerle creer al usuario que el NPC no
--- vende nada.
 function NVS:GuardEmptyList()
     local n = GetMerchantNumItems()
     if n > 0 and #self.visibleItems == 0 then
@@ -436,15 +363,6 @@ function NVS:IsFiltering()
     end
     return false
 end
-
--- =========================================================
--- REMAPEO DE LA API DEL VENDEDOR
---
--- En vez de redibujar a mano (que era lo que rompia precios, monedas
--- alternativas, stock limitado y los items no usables), dejamos que Blizzard
--- dibuje pero le mentimos sobre que items hay. Despues corregimos los IDs de
--- los botones para que comprar siga apuntando al item real.
--- =========================================================
 
 local realNumItems, realItemInfo, realItemLink, realCostInfo, realCostItem, realMaxStack
 
@@ -487,10 +405,6 @@ function NVS:EndRemap()
     end
 end
 
--- =========================================================
--- POST-DIBUJADO: IDs reales + nivel de objeto + color de calidad
--- =========================================================
-
 function NVS:FixButtons(filtering)
     local page = MerchantFrame.page or 1
 
@@ -505,19 +419,17 @@ function NVS:FixButtons(filtering)
                 local virtual = (page - 1) * MERCHANT_ITEMS_PER_PAGE + i
                 realIndex = self.visibleItems[virtual]
                 if realIndex then
-                    -- Esto es lo que hace que BuyMerchantItem y el tooltip
-                    -- apunten al item correcto y no al de la lista filtrada.
+
                     itemButton:SetID(realIndex)
                     if holder then holder:SetID(realIndex) end
                 end
             else
                 realIndex = itemButton:GetID()
-                -- Restaurar el ID original del contenedor (era i por XML)
+
                 if holder then holder:SetID(i) end
             end
             if not shown then realIndex = nil end
 
-            -- Nivel de objeto
             local levelText = itemButton.nvsLevel
             if self.options.showItemLevel and realIndex then
                 local link = GetMerchantItemLink(realIndex)
@@ -542,7 +454,6 @@ function NVS:FixButtons(filtering)
                 levelText:Hide()
             end
 
-            -- Color de calidad en el nombre
             if nameText then
                 local applied = false
                 if self.options.showQualityColors and realIndex then
@@ -564,40 +475,32 @@ function NVS:FixButtons(filtering)
     end
 end
 
--- =========================================================
--- REDIBUJADO
--- =========================================================
-
 function NVS:Redraw()
     if not MerchantFrame or not MerchantFrame:IsShown() then return end
     if MerchantFrame.selectedTab ~= 1 then return end
     if self.isRedrawing then return end
-    -- No pisar la ventana de dividir pilas mientras esta abierta
+
     if StackSplitFrame and StackSplitFrame:IsShown() then return end
 
     self.isRedrawing = true
     local ok, err = pcall(MerchantFrame_Update)
-    -- Pase lo que pase hay que liberar el flag y restaurar la API, si no el
-    -- addon queda trabado para el resto de la sesion.
+
     self.isRedrawing = false
     self:EndRemap()
     if not ok then geterrorhandler()(err) end
 end
 
--- Envoltura sobre el dibujado nativo del vendedor
 local function DrawWrapper(originalFn, ...)
     if MerchantFrame.selectedTab ~= 1 then
         return originalFn(...)
     end
 
-    -- Siempre reconstruimos la lista: asi nunca queda desactualizada.
     NVS:BuildVisibleList()
 
-    -- Solo tocamos la API si el filtro realmente saca algo.
     local filtering = (#NVS.visibleItems ~= GetMerchantNumItems())
 
     if filtering then
-        -- Ajustar la pagina si la lista filtrada se hizo mas corta
+
         local total = math.ceil(#NVS.visibleItems / MERCHANT_ITEMS_PER_PAGE)
         if total < 1 then total = 1 end
         if (MerchantFrame.page or 1) > total then
@@ -621,10 +524,6 @@ local function DrawWrapper(originalFn, ...)
     if not ok2 then geterrorhandler()(err2) end
 end
 
--- Envolvemos MerchantFrame_Update (y no MerchantFrame_UpdateMerchantInfo)
--- porque es el unico punto de entrada: eventos, botones de pagina y cambio de
--- pestana pasan todos por aca. Ademas el estado de los botones Anterior/
--- Siguiente se calcula dentro, asi que queda bien con la lista filtrada.
 local hooked = false
 local function InstallHook()
     if hooked then return end
@@ -637,12 +536,8 @@ local function InstallHook()
     end
 end
 
--- Instalar lo antes posible (FrameXML ya esta cargado en este punto)
 InstallHook()
 
--- Compatibilidad: el resto del addon llamaba a UpdateMerchant()
--- Al cambiar cualquier opcion del filtro de clase hay que tirar el cache:
--- guarda el resultado de CanUse, que depende de esas mismas opciones.
 function NVS:InvalidateUseCache()
     wipe(self.useCache)
 end
@@ -653,12 +548,6 @@ function NVS:UpdateMerchant()
         NPCVendorSortUI:Refresh()
     end
 end
-
--- =========================================================
--- REINTENTO PARA ITEMS NO CACHEADOS
--- Si el cliente todavia no bajo la info de un item, GetItemInfo devuelve nil
--- y el filtro no sabria a que categoria pertenece. Reintentamos un rato.
--- =========================================================
 
 local retry = CreateFrame("Frame")
 retry.elapsed = 0
@@ -692,10 +581,6 @@ local function StartRetry()
     if NVS.pendingCache then retry:Show() else retry:Hide() end
 end
 
--- =========================================================
--- PANEL: mostrar / ocultar
--- =========================================================
-
 function NVS:UpdatePanelVisibility()
     if not NPCVendorSortUI then return end
     if self:HasAnythingToFilter() and self.options.autoShowPanel then
@@ -704,10 +589,6 @@ function NVS:UpdatePanelVisibility()
         NPCVendorSortUI:Hide()
     end
 end
-
--- =========================================================
--- EVENTOS
--- =========================================================
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
@@ -742,19 +623,16 @@ f:SetScript("OnEvent", function(_, event, arg1)
             NPCVendorSortUI:Refresh()
         end
         NVS:UpdatePanelVisibility()
-        -- El propio MerchantFrame ya se redibuja con este evento; nuestro
-        -- wrapper se encarga. No forzamos otro Redraw para no recursar.
 
     elseif event == "MERCHANT_CLOSED" then
         retry:Hide()
         if NPCVendorSortUI then NPCVendorSortUI:Hide() end
         wipe(NVS.detectedSlots)
         wipe(NVS.visibleItems)
-        NVS:EndRemap()   -- red de seguridad
+        NVS:EndRemap()
     end
 end)
 
--- Al cambiar de pestana (Comprar / Recomprar) hay que volver a dibujar bien
 if MerchantFrame then
     local tab1 = _G["MerchantFrameTab1"]
     if tab1 then
@@ -763,10 +641,6 @@ if MerchantFrame then
         end)
     end
 end
-
--- =========================================================
--- SLASH COMMANDS
--- =========================================================
 
 SLASH_NPCVENDORSORT1 = "/nvs"
 SLASH_NPCVENDORSORT2 = "/vendorsort"

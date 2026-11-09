@@ -1,8 +1,3 @@
--- =========================================================
--- NPCVendorSort - UI (panel de filtros)
--- WoW 3.3.5a
--- =========================================================
-
 local NVS = NPCVendorSort
 
 local ui = CreateFrame("Frame", "NPCVendorSortUI", MerchantFrame)
@@ -14,7 +9,6 @@ ui:SetPoint("TOPLEFT", MerchantFrame, "TOPRIGHT", 6, -12)
 ui:SetFrameStrata("HIGH")
 ui:Hide()
 
--- Se puede mover
 ui:SetMovable(true)
 ui:EnableMouse(true)
 ui:RegisterForDrag("LeftButton")
@@ -37,13 +31,6 @@ ui.title = ui:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 ui.title:SetPoint("TOP", ui, "TOP", 0, -8)
 ui.title:SetText("Vendor Filters")
 
--- ---------------------------------------------------------
--- Filtro por clase
---
--- Va arriba de todo, antes que los slots, porque es el que mas items
--- esconde. Si estuviera enterrado en Options, ver un vendedor medio vacio
--- no tendria explicacion visible.
--- ---------------------------------------------------------
 local function MakeOpt(key, label, y, onChange)
     local cb = CreateFrame("CheckButton", "NPCVendorSortUIOpt_" .. key, ui, "UICheckButtonTemplate")
     cb:SetWidth(20)
@@ -95,10 +82,6 @@ ui.armorCB:SetScript("OnEnter", function(self)
 end)
 ui.armorCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
--- ---------------------------------------------------------
--- Botones Todos / Ninguno
--- ---------------------------------------------------------
-
 local function SetAll(value)
     for _, slot in ipairs(NVS.slotOrder) do
         if NVS.detectedSlots[slot] then
@@ -123,16 +106,12 @@ ui.noneBtn:SetPoint("TOPRIGHT", ui, "TOPRIGHT", -10, -70)
 ui.noneBtn:SetText("None")
 ui.noneBtn:SetScript("OnClick", function() SetAll(false) end)
 
--- ---------------------------------------------------------
--- Checkboxes
--- ---------------------------------------------------------
-
 ui.checks = {}
 
 local FIRST_Y   = -96
 local ROW_H     = 22
 local BOTTOM_PAD = 12
-local OPT_H     = 30   -- lugar reservado abajo para el boton Options
+local OPT_H     = 30
 
 local function GetCheck(slot)
     local cb = ui.checks[slot]
@@ -148,15 +127,12 @@ local function GetCheck(slot)
     cb.text:SetJustifyH("LEFT")
 
     cb:SetScript("OnClick", function(self)
-        -- GetChecked() en 3.3.5 devuelve 1 o nil, nunca true/false.
-        -- Guardarlo tal cual borraba la clave de la tabla de filtros.
+
         local checked = self:GetChecked() and true or false
         NVS:SetSlotEnabled(self.slot, checked)
         self:SetChecked(checked)
         PlaySound(checked and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
-        -- Solo redibujar el vendedor. NO llamar a Refresh() aca: mover los
-        -- checkbox mientras se esta procesando su propio click era lo que
-        -- hacia que parecieran "no responder" o cambiar de casilla.
+
         NVS:Redraw()
     end)
 
@@ -164,14 +140,6 @@ local function GetCheck(slot)
     return cb
 end
 
--- ---------------------------------------------------------
--- Boton de opciones
---
--- El menu de nivel de objeto y colores de calidad existia, pero la unica
--- forma de abrirlo era hacer CLICK DERECHO sobre un botoncito de la ventana
--- del vendedor que ademas solo aparecia si el NPC vendia equipo. O sea:
--- invisible y sin pistas. Aca queda un boton normal, siempre a la vista.
--- ---------------------------------------------------------
 ui.optBtn = CreateFrame("Button", nil, ui, "UIPanelButtonTemplate")
 ui.optBtn:SetWidth(178)
 ui.optBtn:SetHeight(20)
@@ -187,7 +155,6 @@ ui.optBtn:SetScript("OnClick", function()
     end
 end)
 
--- Texto para cuando el vendedor no tiene ninguna categoria detectada
 ui.empty = ui:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 ui.empty:SetPoint("TOPLEFT", ui, "TOPLEFT", 10, FIRST_Y)
 ui.empty:SetWidth(180)
@@ -195,15 +162,9 @@ ui.empty:SetJustifyH("LEFT")
 ui.empty:SetText("Nothing to filter here.")
 ui.empty:Hide()
 
--- ---------------------------------------------------------
--- REFRESH
--- ---------------------------------------------------------
-
 function ui:Refresh()
     if not NVS then return end
 
-    -- Los checkbox de clase se ponen al dia en cada refresco: se pueden
-    -- cambiar tambien desde el panel de Options y tienen que coincidir.
     local classOn = NVS.options.classFilter and true or false
     self.classCB:SetChecked(classOn)
     self.armorCB:SetChecked(NVS.options.classArmorOnly and true or false)
@@ -216,9 +177,6 @@ function ui:Refresh()
     local y = FIRST_Y
     local shown = 0
 
-    -- Recorrer SIEMPRE en el orden fijo de slotOrder. Iterar con pairs() sobre
-    -- detectedSlots daba un orden distinto en cada refresco y los checkbox
-    -- cambiaban de lugar.
     for _, slot in ipairs(NVS.slotOrder) do
         if NVS.detectedSlots[slot] then
             local cb = GetCheck(slot)

@@ -1,18 +1,4 @@
--- =========================================================
--- NPCVendorSort Enhanced - Boton y panel de opciones
--- WoW 3.3.5a
---
--- Nota: este archivo YA NO redefine NPCVendorSort:UpdateMerchant().
--- Antes tenia una copia entera de la funcion, y cualquier arreglo hecho en
--- NPCVendorSort.lua quedaba pisado por esta version vieja. Esa duplicacion
--- era una de las causas de que el addon "a veces" fallara.
--- =========================================================
-
 local NVS = NPCVendorSort
-
--- =========================================================
--- BOTON PARA MOSTRAR / OCULTAR EL PANEL DE FILTROS
--- =========================================================
 
 local filterButton = CreateFrame("Button", "NPCVendorSortFilterButton", MerchantFrame)
 filterButton:SetWidth(22)
@@ -45,10 +31,6 @@ end)
 filterButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 filterButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
--- =========================================================
--- PANEL DE OPCIONES
--- =========================================================
-
 local optionsPanel = CreateFrame("Frame", "NPCVendorSortOptionsPanel", MerchantFrame)
 optionsPanel:SetWidth(200)
 optionsPanel:SetHeight(80)
@@ -72,7 +54,6 @@ optionsPanel.title = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontNorm
 optionsPanel.title:SetPoint("TOPLEFT", 10, -8)
 optionsPanel.title:SetText("Options")
 
--- Helper para crear checkboxes de opciones
 local function MakeOptionCheck(key, label, y)
     local cb = CreateFrame("CheckButton", "NPCVendorSortOpt_" .. key, optionsPanel, "UICheckButtonTemplate")
     cb:SetWidth(22)
@@ -102,10 +83,6 @@ function optionsPanel:SyncFromDB()
     self.showColorsCB:SetChecked(NVS.options.showQualityColors and true or false)
 end
 
--- =========================================================
--- CLICKS
--- =========================================================
-
 filterButton:SetScript("OnClick", function(self, button)
     if button == "RightButton" then
         if optionsPanel:IsShown() then
@@ -130,10 +107,6 @@ filterButton:SetScript("OnClick", function(self, button)
     end
 end)
 
--- =========================================================
--- EVENTOS
--- =========================================================
-
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("MERCHANT_SHOW")
 ev:RegisterEvent("MERCHANT_UPDATE")
@@ -148,20 +121,11 @@ ev:SetScript("OnEvent", function(_, event)
 
     optionsPanel:SyncFromDB()
 
-    -- El boton se muestra SIEMPRE que haya un vendedor abierto.
-    --
-    -- Antes se condicionaba a que el NPC vendiera equipo. Eso dejaba las
-    -- opciones (nivel de objeto, colores de calidad) inalcanzables en
-    -- cualquier vendedor de encantamientos, reactivos o recetas, que es
-    -- justo donde el nivel de objeto no molesta y los colores ayudan.
-    -- Ademas, si los filtros escondian todo, no quedaba ni un boton donde
-    -- hacer click para darse cuenta.
     filterButton:Show()
 
     UpdateFilterButtonIcon()
 end)
 
--- Mantener el icono sincronizado si el panel se abre/cierra por otra via
 if NPCVendorSortUI then
     NPCVendorSortUI:HookScript("OnShow", UpdateFilterButtonIcon)
     NPCVendorSortUI:HookScript("OnHide", UpdateFilterButtonIcon)
