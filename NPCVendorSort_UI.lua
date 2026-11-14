@@ -10,6 +10,7 @@ ui:SetFrameStrata("HIGH")
 ui:Hide()
 
 ui:SetMovable(true)
+ui:SetClampedToScreen(true)
 ui:EnableMouse(true)
 ui:RegisterForDrag("LeftButton")
 ui:SetScript("OnDragStart", function(self) self:StartMoving() end)
@@ -76,7 +77,7 @@ ui.armorCB:SetScript("OnEnter", function(self)
     GameTooltip:SetText("My armor type only", 1, 1, 1)
     GameTooltip:AddLine("A Paladin can wear cloth, but does not want to see it. "
         .. "Keeps only the armor type your class uses at your level. "
-        .. "Rings, necks, trinkets and shields are never hidden by this.",
+        .. "Rings, necks, trinkets, cloaks and shields are never hidden by this.",
         0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end)
@@ -84,9 +85,7 @@ ui.armorCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 local function SetAll(value)
     for _, slot in ipairs(NVS.slotOrder) do
-        if NVS.detectedSlots[slot] then
-            NVS:SetSlotEnabled(slot, value)
-        end
+        NVS:SetSlotEnabled(slot, value)
     end
     ui:Refresh()
     NVS:Redraw()

@@ -77,10 +77,23 @@ end
 
 optionsPanel.showLevelCB  = MakeOptionCheck("showItemLevel",     "Show item level",   -28)
 optionsPanel.showColorsCB = MakeOptionCheck("showQualityColors", "Quality colors",    -50)
+optionsPanel.showEnchCB   = MakeOptionCheck("showEnchantInfo",   "Enchant summary",   -72)
+optionsPanel:SetHeight(102)
+
+optionsPanel.showEnchCB:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Enchant summary", 1, 1, 1)
+    GameTooltip:AddLine("Adds a third line under enchant scrolls, scopes and "
+        .. "similar items with what they give: \"+81 SP\", \"Berserk\"...",
+        0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+end)
+optionsPanel.showEnchCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 function optionsPanel:SyncFromDB()
     self.showLevelCB:SetChecked(NVS.options.showItemLevel and true or false)
     self.showColorsCB:SetChecked(NVS.options.showQualityColors and true or false)
+    self.showEnchCB:SetChecked(NVS.options.showEnchantInfo and true or false)
 end
 
 filterButton:SetScript("OnClick", function(self, button)
@@ -109,7 +122,6 @@ end)
 
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("MERCHANT_SHOW")
-ev:RegisterEvent("MERCHANT_UPDATE")
 ev:RegisterEvent("MERCHANT_CLOSED")
 
 ev:SetScript("OnEvent", function(_, event)

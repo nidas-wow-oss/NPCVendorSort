@@ -3,9 +3,11 @@ local NVS = NPCVendorSort
 
 NVS.visibleItems  = {}
 NVS.detectedSlots = {}
+
 NVS.slotCache     = {}
 NVS.useCache      = {}
 NVS.pendingCache  = false
+NVS.pendingCount  = 0
 NVS.isRedrawing   = false
 
 local OTHER = "NVS_OTHER"
@@ -80,6 +82,7 @@ for _, k in ipairs(NVS.slotOrder) do NVS.validSlot[k] = true end
 local defaultOptions = {
     showItemLevel     = true,
     showQualityColors = true,
+    showEnchantInfo   = true,
     autoShowPanel     = true,
     classFilter       = true,
     classArmorOnly    = false,
@@ -125,20 +128,11 @@ function NVS:SetSlotEnabled(slot, enabled)
     self.filters[slot] = enabled and true or false
 end
 
-local function GetItemIDFromLink(link)
-    if not link then return nil end
-    local id = link:match("item:(%d+)")
-    return id and tonumber(id) or nil
-end
-
-function NVS:GetSlotForIndex(index)
-    local link = GetMerchantItemLink(index)
+function NVS:GetSlotForLink(link)
     if not link then return OTHER, true end
 
-    local id = GetItemIDFromLink(link)
-    if id and self.slotCache[id] then
-        return self.slotCache[id], true
-    end
+    local slot = self.slotCache[link]
+    if slot then return slot, true end
 
     local _, _, _, _, _, _, _, _, equipSlot = GetItemInfo(link)
     if equipSlot == nil then
@@ -146,35 +140,64 @@ function NVS:GetSlotForIndex(index)
         return nil, false
     end
 
-    local slot = OTHER
+    slot = OTHER
     if equipSlot ~= "" and self.validSlot[equipSlot] then
         slot = equipSlot
     end
 
-    if id then self.slotCache[id] = slot end
+    self.slotCache[link] = slot
     return slot, true
 end
 
-function NVS:ScanMerchant()
+function NVS:GetSlotForIndex(index)
+    return self:GetSlotForLink(GetMerchantItemLink(index))
+end
+
+local scanTip
+local requested = {}
+NVS.requested = requested
+local REQUESTS_PER_SCAN = 8
+local REQUEST_AGAIN     = 8
+
+function NVS:GetScanTip()
+    if not scanTip then
+        scanTip = CreateFrame("GameTooltip", "NPCVendorSortScanTip", nil, "GameTooltipTemplate")
+    end
+    return scanTip
+end
+
+local function RequestItem(link, tick, budget)
+    local last = requested[link]
+    if last and tick - last < REQUEST_AGAIN then return budget end
+    if budget <= 0 then return budget end
+    local tip = NVS:GetScanTip()
+    tip:SetOwner(WorldFrame, "ANCHOR_NONE")
+    tip:SetHyperlink(link)
+    tip:Hide()
+    requested[link] = tick
+    return budget - 1
+end
+
+function NVS:ScanMerchant(tick)
     wipe(self.detectedSlots)
-    self.pendingCache = false
+    local pending = 0
+    local budget = REQUESTS_PER_SCAN
+    tick = tick or 0
 
     local n = GetMerchantNumItems()
     for i = 1, n do
-        local slot, resolved = self:GetSlotForIndex(i)
+        local link = GetMerchantItemLink(i)
+        local slot, resolved = self:GetSlotForLink(link)
         if not resolved then
-            self.pendingCache = true
+            pending = pending + 1
+            budget = RequestItem(link, tick, budget)
         elseif slot then
             self.detectedSlots[slot] = true
         end
     end
-end
 
-function NVS:HasEquipmentSlots()
-    for slot in pairs(self.detectedSlots) do
-        if slot ~= OTHER then return true end
-    end
-    return false
+    self.pendingCount = pending
+    self.pendingCache = pending > 0
 end
 
 function NVS:HasAnythingToFilter()
@@ -184,6 +207,8 @@ end
 local ALL_ARMOR = { Cloth = true, Leather = true, Mail = true, Plate = true }
 
 local ARMOR_FREE = { Miscellaneous = true }
+
+local WEAPON_FREE = { ["Fishing Poles"] = true, Miscellaneous = true }
 
 NVS.classGear = {
     WARRIOR = {
@@ -279,13 +304,14 @@ function NVS:GetBestArmor()
     return pick
 end
 
-function NVS:CanUse(itemType, itemSubType)
+function NVS:CanUse(itemType, itemSubType, slot)
     if itemType ~= "Weapon" and itemType ~= "Armor" then return true end
 
     local gear = self.classGear[self:GetPlayerClass() or ""]
     if not gear then return true end
 
     if itemType == "Weapon" then
+        if WEAPON_FREE[itemSubType] then return true end
         return gear.weapon[itemSubType] and true or false
     end
 
@@ -296,7 +322,8 @@ function NVS:CanUse(itemType, itemSubType)
 
     if not gear.armor[itemSubType] then return false end
 
-    if self.options.classArmorOnly and ALL_ARMOR[itemSubType] then
+    if self.options.classArmorOnly and ALL_ARMOR[itemSubType]
+       and slot ~= "INVTYPE_CLOAK" then
         local best = self:GetBestArmor()
         if best and itemSubType ~= best then return false end
     end
@@ -304,34 +331,40 @@ function NVS:CanUse(itemType, itemSubType)
     return true
 end
 
-function NVS:IsUsableIndex(index)
+function NVS:IsUsableLink(link, slot)
     if not self.options.classFilter then return true end
-
-    local link = GetMerchantItemLink(index)
     if not link then return true end
 
-    local id = GetItemIDFromLink(link)
-    if id and self.useCache[id] ~= nil then return self.useCache[id] end
+    local ok = self.useCache[link]
+    if ok ~= nil then return ok end
 
     local _, _, _, _, _, itemType, itemSubType = GetItemInfo(link)
     if itemType == nil then return true end
 
-    local ok = self:CanUse(itemType, itemSubType)
-    if id then self.useCache[id] = ok end
+    ok = self:CanUse(itemType, itemSubType, slot)
+    self.useCache[link] = ok
     return ok
 end
 
 function NVS:BuildVisibleList()
-    wipe(self.visibleItems)
+    local list = self.visibleItems
+    wipe(list)
 
+    local slotFilter = false
+    for _, s in ipairs(self.slotOrder) do
+        if not self.filters[s] then slotFilter = true break end
+    end
+
+    local count = 0
     local n = GetMerchantNumItems()
     for i = 1, n do
-        local slot, resolved = self:GetSlotForIndex(i)
+        local link = GetMerchantItemLink(i)
+        local slot, resolved = self:GetSlotForLink(link)
 
-        if not resolved then
-            table.insert(self.visibleItems, i)
-        elseif self:IsSlotEnabled(slot) and self:IsUsableIndex(i) then
-            table.insert(self.visibleItems, i)
+        if (not resolved and not slotFilter)
+           or (resolved and self:IsSlotEnabled(slot) and self:IsUsableLink(link, slot)) then
+            count = count + 1
+            list[count] = i
         end
     end
 
@@ -342,24 +375,16 @@ function NVS:GuardEmptyList()
     local n = GetMerchantNumItems()
     if n > 0 and #self.visibleItems == 0 then
         for i = 1, n do
-            table.insert(self.visibleItems, i)
+            self.visibleItems[i] = i
         end
-        if not self.warnedEmpty then
+
+        if not self.warnedEmpty and not self.pendingCache then
             self.warnedEmpty = true
             DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NPCVendorSort|r: "
                 .. "every item here was hidden by your filters, so they are "
                 .. "being shown anyway. Use /nvs reset to clear the filters.")
         end
         return true
-    end
-    return false
-end
-
-function NVS:IsFiltering()
-    for _, slot in ipairs(self.slotOrder) do
-        if not self:IsSlotEnabled(slot) then
-            return true
-        end
     end
     return false
 end
@@ -405,13 +430,123 @@ function NVS:EndRemap()
     end
 end
 
+local STAT_PATTERNS = {
+    { "spell power by (%d+)",               "SP"     },
+    { "attack power by (%d+)",              "AP"     },
+    { "all stats by (%d+)",                 "Stats"  },
+    { "agility by (%d+)",                   "Agi"    },
+    { "strength by (%d+)",                  "Str"    },
+    { "intellect by (%d+)",                 "Int"    },
+    { "spirit by (%d+)",                    "Spi"    },
+    { "stamina by (%d+)",                   "Sta"    },
+    { "critical strike rating by (%d+)",    "Crit"   },
+    { "hit rating by (%d+)",                "Hit"    },
+    { "haste rating by (%d+)",              "Haste"  },
+    { "expertise rating by (%d+)",          "Exp"    },
+    { "armor penetration rating by (%d+)",  "ArP"    },
+    { "defense rating by (%d+)",            "Def"    },
+    { "resilience rating by (%d+)",         "Resil"  },
+    { "dodge rating by (%d+)",              "Dodge"  },
+    { "parry rating by (%d+)",              "Parry"  },
+    { "block value by (%d+)",               "BV"     },
+    { "block rating by (%d+)",              "Block"  },
+    { "(%d+) mana every 5",                 "MP5"    },
+    { "(%d+) mana per 5",                   "MP5"    },
+    { "all resistances by (%d+)",           "Resist" },
+    { "health by (%d+)",                    "HP"     },
+    { "armor by (%d+)",                     "Armor"  },
+    { "damage by (%d+)",                    "Dmg"    },
+}
+
+local SHORT_NAMES = {
+    Berserking = "Berserk",
+}
+
+local QUALIFIERS = { "Major ", "Greater ", "Superior ", "Mighty ", "Exceptional ",
+                     "Lesser ", "Minor ", "Excellent ", "Potent " }
+
+local enchantCache = {}
+NVS.enchantCache = enchantCache
+
+local function ShortName(name)
+    local suffix = name and name:match(" %- (.+)$")
+    if not suffix then return nil end
+    for _, q in ipairs(QUALIFIERS) do
+        if suffix:sub(1, #q) == q then suffix = suffix:sub(#q + 1) break end
+    end
+    return SHORT_NAMES[suffix] or suffix
+end
+
+local function ReadUseText(link)
+    local tip = NVS:GetScanTip()
+    tip:SetOwner(WorldFrame, "ANCHOR_NONE")
+    tip:SetHyperlink(link)
+    local text
+    for i = 2, tip:NumLines() do
+        local fs = _G["NPCVendorSortScanTipTextLeft" .. i]
+        local t = fs and fs:GetText()
+        if t and t:find("^Use:") then text = t break end
+    end
+    tip:Hide()
+    return text
+end
+
+function NVS:GetEnchantShort(link, name)
+    local cached = enchantCache[link]
+    if cached ~= nil then return cached or nil end
+
+    local use = ReadUseText(link)
+
+    if not use then enchantCache[link] = false return nil end
+    local low = use:lower()
+    if not (low:find("permanently") or low:find("attach")) then
+        enchantCache[link] = false
+        return nil
+    end
+
+    local result
+    if not (low:find("sometimes") or low:find("chance") or low:find("occasionally")) then
+        local parts, n = {}, 0
+        for _, p in ipairs(STAT_PATTERNS) do
+            local v = low:match(p[1])
+            if v then
+                n = n + 1
+                parts[n] = "+" .. v .. " " .. p[2]
+                if n == 2 then break end
+            end
+        end
+        if n > 0 then result = table.concat(parts, " ") end
+    end
+    result = result or ShortName(name)
+
+    enchantCache[link] = result or false
+    return result
+end
+
+local itemButtons, holders, nameTexts, moneyFrames, altFrames
+
+local function CacheButtons()
+    itemButtons, holders, nameTexts, moneyFrames, altFrames = {}, {}, {}, {}, {}
+    for i = 1, MERCHANT_ITEMS_PER_PAGE do
+        itemButtons[i] = _G["MerchantItem" .. i .. "ItemButton"]
+        holders[i]     = _G["MerchantItem" .. i]
+        nameTexts[i]   = _G["MerchantItem" .. i .. "Name"]
+        moneyFrames[i] = _G["MerchantItem" .. i .. "MoneyFrame"] or false
+        altFrames[i]   = _G["MerchantItem" .. i .. "AltCurrencyFrame"] or false
+    end
+end
+
 function NVS:FixButtons(filtering)
+    if not itemButtons then CacheButtons() end
     local page = MerchantFrame.page or 1
+    local showLevel  = self.options.showItemLevel
+    local showColors = self.options.showQualityColors
+    local showEnchant = self.options.showEnchantInfo
 
     for i = 1, MERCHANT_ITEMS_PER_PAGE do
-        local itemButton = _G["MerchantItem" .. i .. "ItemButton"]
-        local holder     = _G["MerchantItem" .. i]
-        local nameText   = _G["MerchantItem" .. i .. "Name"]
+        local itemButton = itemButtons[i]
+        local holder     = holders[i]
+        local nameText   = nameTexts[i]
         if itemButton then
             local shown = holder and holder:IsShown()
             local realIndex
@@ -424,21 +559,53 @@ function NVS:FixButtons(filtering)
                     if holder then holder:SetID(realIndex) end
                 end
             else
-                realIndex = itemButton:GetID()
+
+                local virtual = (page - 1) * MERCHANT_ITEMS_PER_PAGE + i
+                if virtual <= GetMerchantNumItems() then realIndex = virtual end
 
                 if holder then holder:SetID(i) end
             end
-            if not shown then realIndex = nil end
+            if not shown or not itemButton:IsShown() then realIndex = nil end
+
+            local link, name, quality, ilvl, equipSlot
+            if realIndex and (showLevel or showColors or showEnchant) then
+                link = GetMerchantItemLink(realIndex)
+                if link then
+                    local _
+                    name, _, quality, ilvl, _, _, _, _, equipSlot = GetItemInfo(link)
+                end
+            end
+
+            local enchText = itemButton.nvsEnchant
+            local short
+            if showEnchant and name and equipSlot == "" then
+                short = self:GetEnchantShort(link, name)
+            end
+            if short and nameText then
+                if not enchText then
+                    enchText = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                    enchText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, 2)
+                    enchText:SetWidth(nameText:GetWidth() > 0 and nameText:GetWidth() or 100)
+                    enchText:SetHeight(12)
+                    itemButton.nvsEnchant = enchText
+                end
+
+                local money, alt = moneyFrames[i], altFrames[i]
+                if (money and money:IsShown()) or (alt and alt:IsShown()) then
+                    enchText:SetJustifyH("RIGHT")
+                else
+                    enchText:SetJustifyH("LEFT")
+                end
+                enchText:SetText(short)
+                enchText:Show()
+            elseif enchText then
+                enchText:Hide()
+            end
 
             local levelText = itemButton.nvsLevel
-            if self.options.showItemLevel and realIndex then
-                local link = GetMerchantItemLink(realIndex)
-                local ilvl
-                if link then
-                    local _, _, _, lvl = GetItemInfo(link)
-                    ilvl = lvl
-                end
-                if ilvl and ilvl > 1 then
+            if showLevel and realIndex then
+                if ilvl and ilvl > 1 and equipSlot and equipSlot ~= ""
+                   and equipSlot ~= "INVTYPE_BAG" then
                     if not levelText then
                         levelText = itemButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                         levelText:SetPoint("TOPLEFT", itemButton, "TOPLEFT", 2, -2)
@@ -456,16 +623,10 @@ function NVS:FixButtons(filtering)
 
             if nameText then
                 local applied = false
-                if self.options.showQualityColors and realIndex then
-                    local link = GetMerchantItemLink(realIndex)
-                    if link then
-                        local _, _, quality = GetItemInfo(link)
-                        if quality then
-                            local r, g, b = GetItemQualityColor(quality)
-                            nameText:SetTextColor(r, g, b)
-                            applied = true
-                        end
-                    end
+                if showColors and quality then
+                    local r, g, b = GetItemQualityColor(quality)
+                    nameText:SetTextColor(r, g, b)
+                    applied = true
                 end
                 if not applied then
                     nameText:SetTextColor(1, 0.82, 0)
@@ -490,10 +651,7 @@ function NVS:Redraw()
     if not ok then geterrorhandler()(err) end
 end
 
-local function DrawWrapper(originalFn, ...)
-    if MerchantFrame.selectedTab ~= 1 then
-        return originalFn(...)
-    end
+local function DoPostDraw()
 
     NVS:BuildVisibleList()
 
@@ -503,35 +661,38 @@ local function DrawWrapper(originalFn, ...)
 
         local total = math.ceil(#NVS.visibleItems / MERCHANT_ITEMS_PER_PAGE)
         if total < 1 then total = 1 end
-        if (MerchantFrame.page or 1) > total then
+        local page = MerchantFrame.page or 1
+        if page > total then
             MerchantFrame.page = total
-        end
-        if (MerchantFrame.page or 1) < 1 then
+        elseif page < 1 then
             MerchantFrame.page = 1
         end
 
         NVS:BeginRemap()
-        local ok, err = pcall(originalFn, ...)
+        MerchantFrame_UpdateMerchantInfo()
         NVS:EndRemap()
-        if not ok then
-            geterrorhandler()(err)
-        end
-    else
-        originalFn(...)
     end
 
-    local ok2, err2 = pcall(NVS.FixButtons, NVS, filtering)
-    if not ok2 then geterrorhandler()(err2) end
+    NVS:FixButtons(filtering)
+end
+
+local inPostDraw = false
+local function PostDraw()
+    if inPostDraw or MerchantFrame.selectedTab ~= 1 then return end
+    inPostDraw = true
+    local ok, err = pcall(DoPostDraw)
+
+    NVS:EndRemap()
+    inPostDraw = false
+    if not ok then geterrorhandler()(err) end
 end
 
 local hooked = false
 local function InstallHook()
     if hooked then return end
-    if type(_G.MerchantFrame_Update) == "function" then
-        local original = _G.MerchantFrame_Update
-        _G.MerchantFrame_Update = function(...)
-            return DrawWrapper(original, ...)
-        end
+    if type(MerchantFrame_Update) == "function"
+       and type(MerchantFrame_UpdateMerchantInfo) == "function" then
+        hooksecurefunc("MerchantFrame_Update", PostDraw)
         hooked = true
     end
 end
@@ -555,7 +716,7 @@ retry.tries = 0
 retry:Hide()
 retry:SetScript("OnUpdate", function(self, elapsed)
     self.elapsed = self.elapsed + elapsed
-    if self.elapsed < 0.25 then return end
+    if self.elapsed < 0.5 then return end
     self.elapsed = 0
     self.tries = self.tries + 1
 
@@ -564,13 +725,18 @@ retry:SetScript("OnUpdate", function(self, elapsed)
         return
     end
 
-    NVS:ScanMerchant()
-    if NPCVendorSortUI and NPCVendorSortUI.Refresh then
-        NPCVendorSortUI:Refresh()
-    end
-    NVS:Redraw()
+    local before = NVS.pendingCount
+    NVS:ScanMerchant(self.tries)
+    if NVS.pendingCount ~= before then
+        if NPCVendorSortUI and NPCVendorSortUI.Refresh then
+            NPCVendorSortUI:Refresh()
+        end
 
-    if not NVS.pendingCache or self.tries >= 24 then
+        NVS:UpdatePanelVisibility()
+        NVS:Redraw()
+    end
+
+    if not NVS.pendingCache or self.tries >= 120 then
         self:Hide()
     end
 end)
@@ -579,6 +745,10 @@ local function StartRetry()
     retry.elapsed = 0
     retry.tries = 0
     if NVS.pendingCache then retry:Show() else retry:Hide() end
+end
+
+local function EnsureRetry()
+    if NVS.pendingCache and not retry:IsShown() then StartRetry() end
 end
 
 function NVS:UpdatePanelVisibility()
@@ -597,15 +767,22 @@ f:RegisterEvent("MERCHANT_SHOW")
 f:RegisterEvent("MERCHANT_UPDATE")
 f:RegisterEvent("MERCHANT_CLOSED")
 
-f:SetScript("OnEvent", function(_, event, arg1)
+f:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == "NPCVendorSort" then
             NVS:InitDB()
             InstallHook()
+            self:UnregisterEvent("ADDON_LOADED")
         end
 
     elseif event == "PLAYER_LOGIN" then
         InstallHook()
+
+        local cls = NVS:GetPlayerClass()
+        if cls and NVS.classGear[cls] then
+            NVS.classGear = { [cls] = NVS.classGear[cls] }
+        end
+        self:UnregisterEvent("PLAYER_LOGIN")
 
     elseif event == "MERCHANT_SHOW" then
         InstallHook()
@@ -623,24 +800,22 @@ f:SetScript("OnEvent", function(_, event, arg1)
             NPCVendorSortUI:Refresh()
         end
         NVS:UpdatePanelVisibility()
+        EnsureRetry()
 
     elseif event == "MERCHANT_CLOSED" then
         retry:Hide()
         if NPCVendorSortUI then NPCVendorSortUI:Hide() end
         wipe(NVS.detectedSlots)
         wipe(NVS.visibleItems)
+        wipe(NVS.slotCache)
+        wipe(NVS.useCache)
+        wipe(NVS.requested)
+        wipe(NVS.enchantCache)
+        NVS.pendingCount = 0
+        NVS.pendingCache = false
         NVS:EndRemap()
     end
 end)
-
-if MerchantFrame then
-    local tab1 = _G["MerchantFrameTab1"]
-    if tab1 then
-        tab1:HookScript("OnClick", function()
-            if MerchantFrame:IsShown() then NVS:Redraw() end
-        end)
-    end
-end
 
 SLASH_NPCVENDORSORT1 = "/nvs"
 SLASH_NPCVENDORSORT2 = "/vendorsort"
@@ -658,10 +833,13 @@ SlashCmdList["NPCVENDORSORT"] = function(msg)
     end
 
     if not NPCVendorSortUI then return end
+
     if NPCVendorSortUI:IsShown() then
+        NVS.options.autoShowPanel = false
         NPCVendorSortUI:Hide()
     else
-        NPCVendorSortUI:Show()
+        NVS.options.autoShowPanel = true
         NPCVendorSortUI:Refresh()
+        NPCVendorSortUI:Show()
     end
 end
